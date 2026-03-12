@@ -99,3 +99,38 @@ From the project folder:
 - Save/load progression between sessions
 - Sprite art, animations, and polish effects
 - Co-op or local multiplayer support
+
+## Repository
+
+- **Repository name:** `love2d-zombie-house-defense`
+- **Repository description:** A small top-down zombie house defense prototype built with Lua and LÖVE2D, featuring breakable openings, repairs, board resource management, weapon upgrades, and wave survival.
+- **Suggested GitHub URL:** `https://github.com/<your-username>/love2d-zombie-house-defense`
+
+## Contributing
+
+Contributions are welcome. To contribute:
+
+1. Fork the repository and create a feature branch:
+   ```bash
+   git checkout -b feature/my-change
+   ```
+2. Keep changes focused and update docs when behavior changes.
+3. Run the game locally with LÖVE2D and verify no regressions.
+4. Commit with clear messages and open a pull request describing:
+   - What changed
+   - Why it changed
+   - How it was tested
+
+### Contributor Setup
+
+```bash
+git clone https://github.com/<your-username>/love2d-zombie-house-defense.git
+cd love2d-zombie-house-defense
+love .
+```
+
+## License
+
+This project is released under the **MIT License**.
+
+You can add a `LICENSE` file with MIT text, or choose another license if preferred.
