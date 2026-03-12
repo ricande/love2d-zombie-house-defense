@@ -1,0 +1,32 @@
+# OS / editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.code-workspace
+
+# LÖVE runtime / logs
+*.log
+*.tmp
+*.bak
+
+# Lua bytecode and rocks
+*.luac
+*.out
+*.rock
+*.src.rock
+lua_modules/
+.luarocks/
+
+# Build / package artifacts
+dist/
+build/
+release/
+*.love
+
+# Test / coverage output
+coverage/
+*.gcda
+*.gcno
+*.gcov
