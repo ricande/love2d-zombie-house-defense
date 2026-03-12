@@ -1,17 +1,55 @@
 local Zombie = {}
 Zombie.__index = Zombie
 
-function Zombie.new(x, y)
+Zombie.types = {
+    normal = {
+        name = "Normal",
+        radius = 12,
+        speedMin = 58,
+        speedMax = 76,
+        health = 55,
+        contactDamage = 8,
+        wallDamage = 14,
+        color = { 0.67, 0.8, 0.31 },
+    },
+    fast = {
+        name = "Fast",
+        radius = 10,
+        speedMin = 95,
+        speedMax = 125,
+        health = 38,
+        contactDamage = 7,
+        wallDamage = 12,
+        color = { 0.95, 0.73, 0.28 },
+    },
+    tank = {
+        name = "Tank",
+        radius = 16,
+        speedMin = 38,
+        speedMax = 50,
+        health = 130,
+        contactDamage = 14,
+        wallDamage = 24,
+        color = { 0.56, 0.38, 0.72 },
+    },
+}
+
+function Zombie.new(x, y, zombieType)
     local self = setmetatable({}, Zombie)
+    local profile = Zombie.types[zombieType] or Zombie.types.normal
+    self.kind = zombieType or "normal"
     self.x = x
     self.y = y
-    self.radius = 12
-    self.speed = 58 + love.math.random() * 18
-    self.health = 52
+    self.radius = profile.radius
+    self.speed = profile.speedMin + love.math.random() * (profile.speedMax - profile.speedMin)
+    self.health = profile.health
+    self.maxHealth = profile.health
     self.attackCooldown = 0.8
     self.attackTimer = love.math.random() * 0.4
-    self.contactDamage = 8
-    self.wallDamage = 14
+    self.contactDamage = profile.contactDamage
+    self.wallDamage = profile.wallDamage
+    self.color = profile.color
+    self.hitFlashTimer = 0
     self.targetOpeningId = nil
     self.inside = false
     return self
@@ -27,11 +65,13 @@ end
 
 function Zombie:takeDamage(amount)
     self.health = self.health - amount
+    self.hitFlashTimer = 0.11
     return self.health <= 0
 end
 
 function Zombie:update(dt, house, player)
     self.attackTimer = self.attackTimer + dt
+    self.hitFlashTimer = math.max(0, self.hitFlashTimer - dt)
     if house:isInside(self.x, self.y) then
         self.inside = true
     end
@@ -86,11 +126,15 @@ function Zombie:update(dt, house, player)
 end
 
 function Zombie:draw()
-    love.graphics.setColor(0.67, 0.8, 0.31)
+    if self.hitFlashTimer > 0 then
+        love.graphics.setColor(1, 1, 1)
+    else
+        love.graphics.setColor(self.color)
+    end
     love.graphics.circle("fill", self.x, self.y, self.radius)
     love.graphics.setColor(0.18, 0.22, 0.1)
-    love.graphics.circle("fill", self.x - 4, self.y - 2, 2)
-    love.graphics.circle("fill", self.x + 4, self.y - 2, 2)
+    love.graphics.circle("fill", self.x - self.radius * 0.3, self.y - self.radius * 0.15, 2)
+    love.graphics.circle("fill", self.x + self.radius * 0.3, self.y - self.radius * 0.15, 2)
 end
 
 return Zombie

@@ -57,6 +57,10 @@ function Player:takeDamage(amount)
     end
 end
 
+function Player:heal(amount)
+    self.health = math.min(self.maxHealth, self.health + amount)
+end
+
 function Player:draw()
     if self.isDead then
         love.graphics.setColor(0.25, 0.25, 0.25)
