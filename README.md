@@ -30,7 +30,7 @@ _(Add a real screenshot later in `docs/`.)_
 ### Current Systems Implemented
 
 - Top-down house defense with breakable doors/windows and repair loop.
-- Multi-type zombies (`normal`, `fast`, `tank`) with directional sprite animation.
+- Shared animation controller for actors (player + zombies) with 8-direction sprite playback.
 - Wave director with escalating composition and spawn pressure.
 - State machine flow: `start_menu -> combat -> prep -> store -> game_over`.
 - Between-wave store for healing, boards, and weapon stat upgrades.
@@ -90,6 +90,13 @@ _(Add a real screenshot later in `docs/`.)_
 - **Shotgun screen shake** adds impact when firing spread shots.
 - **Zombie hit flash** gives clear feedback when bullets connect.
 - **Blood particles on death** improve readability and combat feel.
+
+### Actor Animation Runtime
+
+- `AnimationController` drives sprite frame progression, direction mapping, and one-shot states.
+- `AnimationProfile` converts animation data from `settings.lua` into controller-ready configs.
+- Player uses `idle`, `walk`, `shoot`, and `pickup` sheets with transient priorities (`pickup > shoot`).
+- Zombies use the shared controller with their directional walk sheet and fallback circle rendering if assets are missing.
 
 ### Game States
 
@@ -166,7 +173,9 @@ From the project folder:
 │   │   └── zombie.lua    # Zombie AI and type profiles
 │   ├── systems/
 │   │   ├── house.lua     # House layout and breakable openings
-│   │   └── weapon.lua    # Weapon definitions and upgrade logic
+│   │   ├── weapon.lua    # Weapon definitions and upgrade logic
+│   │   ├── animation_controller.lua # Shared runtime animation state/frame controller
+│   │   └── animation_profile.lua    # Maps settings profiles to controller config
 │   └── ui/
 │       └── ui.lua        # HUD and state overlays
 ├── docs/
@@ -250,10 +259,11 @@ Troubleshooting:
 - `world`: spawn padding and world-level bounds helpers.
 - `states`: prep timer and phase timings.
 - `waveDirector`: base wave count, per-wave growth, spawn interval curve, zombie mix weights.
+- `animations`: shared direction order and actor-specific sprite animation profiles.
 - `player`: speed, health, repair range, and starting resources.
 - `house`: house dimensions, wall thickness, and all opening durability definitions.
 - `weapons`: base stats plus upgrade costs/multipliers.
-- `zombies`: per-type stats, attack behavior, and animation settings.
+- `zombies`: per-type stats and attack behavior.
 - `economy`: drop tables and store prices/rewards.
 - `effects`: blood particle and screen-shake tuning.
 - `pickups`: resource pickup radius.

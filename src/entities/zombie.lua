@@ -1,38 +1,11 @@
 local Zombie = {}
 Zombie.__index = Zombie
 
-Zombie.types = {
-    normal = {
-        name = "Normal",
-        radius = 12,
-        speedMin = 58,
-        speedMax = 76,
-        health = 55,
-        contactDamage = 8,
-        wallDamage = 14,
-        color = { 0.67, 0.8, 0.31 },
-    },
-    fast = {
-        name = "Fast",
-        radius = 10,
-        speedMin = 95,
-        speedMax = 125,
-        health = 38,
-        contactDamage = 7,
-        wallDamage = 12,
-        color = { 0.95, 0.73, 0.28 },
-    },
-    tank = {
-        name = "Tank",
-        radius = 16,
-        speedMin = 38,
-        speedMax = 50,
-        health = 130,
-        contactDamage = 14,
-        wallDamage = 24,
-        color = { 0.56, 0.38, 0.72 },
-    },
-}
+local Settings = require("settings")
+local AnimationController = require("src.systems.animation_controller")
+local AnimationProfile = require("src.systems.animation_profile")
+
+Zombie.types = Settings.zombies.types
 
 function Zombie.new(x, y, zombieType)
     local self = setmetatable({}, Zombie)
@@ -44,12 +17,16 @@ function Zombie.new(x, y, zombieType)
     self.speed = profile.speedMin + love.math.random() * (profile.speedMax - profile.speedMin)
     self.health = profile.health
     self.maxHealth = profile.health
-    self.attackCooldown = 0.8
-    self.attackTimer = love.math.random() * 0.4
+    self.attackCooldown = Settings.zombies.attackCooldown
+    self.attackTimer = love.math.random() * Settings.zombies.attackTimerJitter
     self.contactDamage = profile.contactDamage
     self.wallDamage = profile.wallDamage
     self.color = profile.color
     self.hitFlashTimer = 0
+    local profile = Settings.animations.zombie
+    local animationControllerConfig = AnimationProfile.toControllerConfig(profile, Settings.animations.directionOrder)
+    self.animation = AnimationController.new(animationControllerConfig)
+    self.animation:setTimeOffset(love.math.random() * 0.5)
     self.targetOpeningId = nil
     self.inside = false
     return self
@@ -65,23 +42,25 @@ end
 
 function Zombie:takeDamage(amount)
     self.health = self.health - amount
-    self.hitFlashTimer = 0.11
+    self.hitFlashTimer = Settings.zombies.hitFlashDuration
     return self.health <= 0
 end
 
 function Zombie:update(dt, house, player)
     self.attackTimer = self.attackTimer + dt
     self.hitFlashTimer = math.max(0, self.hitFlashTimer - dt)
+    self.animation:update(dt)
     if house:isInside(self.x, self.y) then
         self.inside = true
     end
 
     if self.inside then
         local ndx, ndy, distance = normalize(player.x - self.x, player.y - self.y)
+        self.animation:setDirectionFromVector(ndx, ndy)
         self.x = self.x + ndx * self.speed * dt
         self.y = self.y + ndy * self.speed * dt
 
-        if distance <= self.radius + player.radius + 4 and self.attackTimer >= self.attackCooldown then
+        if distance <= self.radius + player.radius + Settings.zombies.playerAttackOffset and self.attackTimer >= self.attackCooldown then
             self.attackTimer = 0
             player:takeDamage(self.contactDamage)
         end
@@ -111,8 +90,9 @@ function Zombie:update(dt, house, player)
 
     local ox, oy = house:getOpeningWorldPosition(targetOpening)
     local ndx, ndy, distance = normalize(ox - self.x, oy - self.y)
+    self.animation:setDirectionFromVector(ndx, ndy)
 
-    if distance > self.radius + 6 then
+    if distance > self.radius + Settings.zombies.openingAttackDistance then
         self.x = self.x + ndx * self.speed * dt
         self.y = self.y + ndy * self.speed * dt
     else
@@ -126,6 +106,17 @@ function Zombie:update(dt, house, player)
 end
 
 function Zombie:draw()
+    local tint = { 1, 1, 1, 1 }
+    if self.hitFlashTimer > 0 then
+        local flash = math.min(1, self.hitFlashTimer / Settings.zombies.hitFlashDuration)
+        tint[2] = tint[2] + (1 - tint[2]) * flash
+        tint[3] = tint[3] + (1 - tint[3]) * flash
+    end
+    if self.animation:draw(self.x, self.y, self.radius, tint) then
+        return
+    end
+
+    -- Fallback placeholder draw if sprite sheet is unavailable.
     if self.hitFlashTimer > 0 then
         love.graphics.setColor(1, 1, 1)
     else

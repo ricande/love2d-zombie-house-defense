@@ -3,6 +3,7 @@ local Player = require("src.entities.player")
 local Zombie = require("src.entities.zombie")
 local Weapon = require("src.systems.weapon")
 local UI = require("src.ui.ui")
+local Settings = require("settings")
 
 local STATES = {
     START_MENU = "start_menu",
@@ -13,8 +14,8 @@ local STATES = {
 }
 
 local game = {
-    worldWidth = 1000,
-    worldHeight = 700,
+    worldWidth = Settings.window.width,
+    worldHeight = Settings.window.height,
     bullets = {},
     zombies = {},
     pickups = {},
@@ -56,39 +57,46 @@ end
 
 local function spawnBlood(x, y)
     -- Lightweight blood burst for death feedback.
-    for _ = 1, 12 do
+    for _ = 1, Settings.effects.blood.count do
         local angle = love.math.random() * math.pi * 2
-        local speed = 40 + love.math.random() * 150
+        local speed = Settings.effects.blood.speedMin + love.math.random() * (Settings.effects.blood.speedMax - Settings.effects.blood.speedMin)
         table.insert(game.particles, {
             x = x,
             y = y,
             vx = math.cos(angle) * speed,
             vy = math.sin(angle) * speed,
-            life = 0.55 + love.math.random() * 0.35,
-            maxLife = 0.9,
-            radius = 2 + love.math.random() * 2,
+            life = Settings.effects.blood.lifeMin + love.math.random() * (Settings.effects.blood.lifeMax - Settings.effects.blood.lifeMin),
+            maxLife = Settings.effects.blood.lifeMax,
+            radius = Settings.effects.blood.radiusMin + love.math.random() * (Settings.effects.blood.radiusMax - Settings.effects.blood.radiusMin),
         })
     end
 end
 
 local function chooseZombieType()
-    -- Wave director: unlock stronger types gradually.
+    -- Wave director: unlock stronger types gradually with configured weights.
     local roll = love.math.random()
-    if game.wave < 3 then
-        return "normal"
-    elseif game.wave < 6 then
-        if roll < 0.2 then return "fast" end
-        return "normal"
-    else
-        if roll < 0.15 then return "tank" end
-        if roll < 0.45 then return "fast" end
-        return "normal"
+    local selectedTier = Settings.waveDirector.typeChances[#Settings.waveDirector.typeChances]
+    for _, tier in ipairs(Settings.waveDirector.typeChances) do
+        if game.wave <= tier.maxWave then
+            selectedTier = tier
+            break
+        end
     end
+
+    local cumulative = 0
+    for _, zombieType in ipairs(Settings.waveDirector.typeRollOrder) do
+        cumulative = cumulative + (selectedTier.chances[zombieType] or 0)
+        if roll <= cumulative then
+            return zombieType
+        end
+    end
+
+    return "normal"
 end
 
 local function spawnZombie()
     local side = love.math.random(1, 4)
-    local padding = 50
+    local padding = Settings.world.spawnPadding
     local x, y
     if side == 1 then
         x = love.math.random(0, game.worldWidth)
@@ -108,9 +116,14 @@ end
 
 local function beginWave()
     game.wave = game.wave + 1
-    game.director.toSpawn = 4 + game.wave * 2 + math.floor(game.wave * 0.8)
+    game.director.toSpawn = Settings.waveDirector.baseCount
+        + game.wave * Settings.waveDirector.growthPerWave
+        + math.floor(game.wave * Settings.waveDirector.growthBonusFactor)
     game.director.spawnTimer = 0
-    game.director.spawnInterval = math.max(0.24, 1.08 - game.wave * 0.045)
+    game.director.spawnInterval = math.max(
+        Settings.waveDirector.spawnIntervalMin,
+        Settings.waveDirector.spawnIntervalBase - game.wave * Settings.waveDirector.spawnIntervalPerWave
+    )
     game.statusText = ("Wave %d begins. Defend the house!"):format(game.wave)
     setState(STATES.COMBAT)
 end
@@ -154,10 +167,11 @@ local function tryFireWeapon()
         local bulletDirY = dx * sinA + dy * cosA
         createBullet(game.player.x, game.player.y, bulletDirX, bulletDirY, weapon.bulletSpeed, weapon.damage, weapon.range)
     end
+    game.player:triggerShootAnim()
 
     if game.player.loadout.current == "shotgun" then
-        game.shakeTimer = 0.16
-        game.shakeStrength = 5
+        game.shakeTimer = Settings.effects.shotgunShake.duration
+        game.shakeStrength = Settings.effects.shotgunShake.strength
     end
 end
 
@@ -182,9 +196,10 @@ local function tryRepair()
 end
 
 local function collectPickups()
+    local collectedCount = 0
     for i = #game.pickups, 1, -1 do
         local pickup = game.pickups[i]
-        if distanceSq(game.player.x, game.player.y, pickup.x, pickup.y) < (game.player.radius + 10) ^ 2 then
+        if distanceSq(game.player.x, game.player.y, pickup.x, pickup.y) < (game.player.radius + Settings.pickups.collectRadius) ^ 2 then
             if pickup.kind == "scrap" then
                 game.player.scrap = game.player.scrap + pickup.amount
                 game.statusText = ("Collected %d scrap."):format(pickup.amount)
@@ -193,19 +208,24 @@ local function collectPickups()
                 game.statusText = ("Collected %d board."):format(pickup.amount)
             end
             table.remove(game.pickups, i)
+            collectedCount = collectedCount + 1
         end
     end
+    return collectedCount
 end
 
 local function addZombieDrops(zombie)
-    local scrap = (zombie.kind == "tank") and 3 or 1
+    local scrap = Settings.economy.drops.scrapByType[zombie.kind] or 1
     table.insert(game.pickups, { x = zombie.x, y = zombie.y, amount = scrap, kind = "scrap" })
 
-    local boardChance = 0.35
-    if zombie.kind == "fast" then boardChance = 0.2 end
-    if zombie.kind == "tank" then boardChance = 0.7 end
+    local boardChance = Settings.economy.drops.boardChanceByType[zombie.kind] or Settings.economy.drops.boardChanceByType.normal
     if love.math.random() < boardChance then
-        table.insert(game.pickups, { x = zombie.x + 5, y = zombie.y - 5, amount = 1, kind = "board" })
+        table.insert(game.pickups, {
+            x = zombie.x + Settings.economy.drops.boardDropOffset.x,
+            y = zombie.y + Settings.economy.drops.boardDropOffset.y,
+            amount = 1,
+            kind = "board"
+        })
     end
 end
 
@@ -254,8 +274,8 @@ local function updateParticles(dt)
         particle.life = particle.life - dt
         particle.x = particle.x + particle.vx * dt
         particle.y = particle.y + particle.vy * dt
-        particle.vx = particle.vx * 0.93
-        particle.vy = particle.vy * 0.93
+        particle.vx = particle.vx * Settings.effects.blood.drag
+        particle.vy = particle.vy * Settings.effects.blood.drag
         if particle.life <= 0 then
             table.remove(game.particles, i)
         end
@@ -273,30 +293,30 @@ local function tryStorePurchase(option)
             game.statusText = result
         end
     elseif option == "heal" then
-        local cost = 5
+        local cost = Settings.economy.store.healCost
         if game.player.scrap >= cost then
             game.player.scrap = game.player.scrap - cost
-            game.player:heal(30)
-            game.statusText = "Healed +30 HP."
+            game.player:heal(Settings.economy.store.healAmount)
+            game.statusText = ("Healed +%d HP."):format(Settings.economy.store.healAmount)
         else
-            game.statusText = "Need 5 scrap."
+            game.statusText = ("Need %d scrap."):format(cost)
         end
     elseif option == "boards" then
-        local cost = 4
+        local cost = Settings.economy.store.boardPackCost
         if game.player.scrap >= cost then
             game.player.scrap = game.player.scrap - cost
-            game.player.boards = game.player.boards + 2
-            game.statusText = "Bought 2 boards."
+            game.player.boards = game.player.boards + Settings.economy.store.boardPackAmount
+            game.statusText = ("Bought %d boards."):format(Settings.economy.store.boardPackAmount)
         else
-            game.statusText = "Need 4 scrap."
+            game.statusText = ("Need %d scrap."):format(cost)
         end
     end
 end
 
 local function resetRun()
-    game.house = House.new(260, 140, 480, 420)
+    game.house = House.new(Settings.house.x, Settings.house.y, Settings.house.width, Settings.house.height)
     game.player = Player.new(game.house.x + game.house.width * 0.5, game.house.y + game.house.height * 0.5, Weapon.createLoadout())
-    game.player.scrap = 0
+    game.player.scrap = Settings.player.startingScrap
     game.bullets = {}
     game.zombies = {}
     game.pickups = {}
@@ -311,7 +331,7 @@ end
 
 local function enterPrepPhase()
     setState(STATES.PREP)
-    game.prepTimer = 8
+    game.prepTimer = Settings.states.prepDuration
     game.statusText = "Preparation: repair openings or press B for store."
 end
 
@@ -323,7 +343,9 @@ local function updateCombat(dt)
 
     updateBullets(dt)
     updateZombies(dt)
-    collectPickups()
+    if collectPickups() > 0 then
+        game.player:triggerPickupAnim()
+    end
 
     if game.director.toSpawn > 0 then
         game.director.spawnTimer = game.director.spawnTimer + dt
@@ -339,7 +361,9 @@ end
 
 local function updatePrep(dt)
     game.player:update(dt, game.house, game.worldWidth, game.worldHeight)
-    collectPickups()
+    if collectPickups() > 0 then
+        game.player:triggerPickupAnim()
+    end
     game.prepTimer = game.prepTimer - dt
     if game.prepTimer <= 0 then
         setState(STATES.STORE)
@@ -349,8 +373,8 @@ end
 
 function love.load()
     love.window.setMode(game.worldWidth, game.worldHeight)
-    love.window.setTitle("Top-Down Zombie Defense Prototype")
-    love.graphics.setBackgroundColor(0.12, 0.14, 0.12)
+    love.window.setTitle(Settings.window.title)
+    love.graphics.setBackgroundColor(Settings.window.backgroundColor)
     love.math.setRandomSeed(os.time())
     resetRun()
 end
