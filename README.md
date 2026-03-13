@@ -205,19 +205,41 @@ Each profile supports:
 Example profile names:
 
 - `zombie` (backward-compatible zombie source/output layout).
-- `player_idle_a` (sample player idle profile).
+- `player_idle`
+- `player_pickup`
+- `player_shoot`
+- `player_walk`
 
 Usage examples:
 
 ```powershell
 pwsh ./assets/scripts/sheet_maker.ps1 -Profile zombie
-pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_idle_a
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_idle
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_pickup
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_shoot
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_walk
 ```
+
+Build all player sheets:
+
+```powershell
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_idle
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_pickup
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_shoot
+pwsh ./assets/scripts/sheet_maker.ps1 -Profile player_walk
+```
+
+Player output files:
+
+- `assets/graphics/player/idle.png`
+- `assets/graphics/player/pickup.png`
+- `assets/graphics/player/shoot.png`
+- `assets/graphics/player/walk.png`
 
 Troubleshooting:
 
 - Missing file: verify each `SourceMap` filename exists in `SourceDir`.
-- Wrong frame count: verify GIF frame count or adjust `FrameCount`.
+- Wrong frame count: verify each state's GIF frame count and set `FrameCount` per profile (`idle=4`, `pickup=5`, `shoot=16`, `walk=6`).
 - Alpha or palette issues: inspect output with `magick identify` and adjust `PaletteColors`.
 
 ## Game Configuration (`settings.lua`)
