@@ -57,10 +57,20 @@ function Zombie:update(dt, house, player)
     if self.inside then
         local ndx, ndy, distance = normalize(player.x - self.x, player.y - self.y)
         self.animation:setDirectionFromVector(ndx, ndy)
-        self.x = self.x + ndx * self.speed * dt
-        self.y = self.y + ndy * self.speed * dt
+        local nextX = self.x + ndx * self.speed * dt
+        local nextY = self.y + ndy * self.speed * dt
+        self.x, self.y = house:resolveWallCollision(
+            self.x,
+            self.y,
+            nextX,
+            nextY,
+            self.radius,
+            function(wall, alongAxisCoord, radius)
+                return house:isZombiePassableAtWall(wall, alongAxisCoord, radius)
+            end
+        )
 
-        if distance <= self.radius + player.radius + Settings.zombies.playerAttackOffset and self.attackTimer >= self.attackCooldown then
+        if distance <= self.radius + player.radius and self.attackTimer >= self.attackCooldown then
             self.attackTimer = 0
             player:takeDamage(self.contactDamage)
         end
@@ -93,8 +103,18 @@ function Zombie:update(dt, house, player)
     self.animation:setDirectionFromVector(ndx, ndy)
 
     if distance > self.radius + Settings.zombies.openingAttackDistance then
-        self.x = self.x + ndx * self.speed * dt
-        self.y = self.y + ndy * self.speed * dt
+        local nextX = self.x + ndx * self.speed * dt
+        local nextY = self.y + ndy * self.speed * dt
+        self.x, self.y = house:resolveWallCollision(
+            self.x,
+            self.y,
+            nextX,
+            nextY,
+            self.radius,
+            function(wall, alongAxisCoord, radius)
+                return house:isZombiePassableAtWall(wall, alongAxisCoord, radius)
+            end
+        )
     else
         if targetOpening.durability <= 0 then
             self.inside = true

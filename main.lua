@@ -4,6 +4,7 @@ local Zombie = require("src.entities.zombie")
 local Weapon = require("src.systems.weapon")
 local UI = require("src.ui.ui")
 local Settings = require("settings")
+local Collision = require("src.systems.collision")
 
 local STATES = {
     START_MENU = "start_menu",
@@ -268,6 +269,61 @@ local function updateZombies(dt)
     end
 end
 
+local function resolveDynamicCollisions()
+    if game.player.isDead or #game.zombies == 0 then
+        return
+    end
+
+    local playerPassRule = function(wall, alongAxisCoord, radius)
+        return game.house:isPlayerPassableAtWall(wall, alongAxisCoord, radius)
+    end
+    local zombiePassRule = function(wall, alongAxisCoord, radius)
+        return game.house:isZombiePassableAtWall(wall, alongAxisCoord, radius)
+    end
+
+    for _ = 1, 3 do
+        local hadOverlap = false
+        for _, zombie in ipairs(game.zombies) do
+            local hit, nx, ny, depth = Collision.circleCirclePenetration(
+                game.player.x,
+                game.player.y,
+                game.player.radius,
+                zombie.x,
+                zombie.y,
+                zombie.radius
+            )
+            if hit and depth > 0 then
+                local halfPush = (depth + 0.001) * 0.5
+                game.player.x = game.player.x - nx * halfPush
+                game.player.y = game.player.y - ny * halfPush
+                zombie.x = zombie.x + nx * halfPush
+                zombie.y = zombie.y + ny * halfPush
+
+                game.player.x, game.player.y = game.house:resolveWallCollision(
+                    game.player.x,
+                    game.player.y,
+                    game.player.x,
+                    game.player.y,
+                    game.player.radius,
+                    playerPassRule
+                )
+                zombie.x, zombie.y = game.house:resolveWallCollision(
+                    zombie.x,
+                    zombie.y,
+                    zombie.x,
+                    zombie.y,
+                    zombie.radius,
+                    zombiePassRule
+                )
+                hadOverlap = true
+            end
+        end
+        if not hadOverlap then
+            break
+        end
+    end
+end
+
 local function updateParticles(dt)
     for i = #game.particles, 1, -1 do
         local particle = game.particles[i]
@@ -343,6 +399,7 @@ local function updateCombat(dt)
 
     updateBullets(dt)
     updateZombies(dt)
+    resolveDynamicCollisions()
     if collectPickups() > 0 then
         game.player:triggerPickupAnim()
     end

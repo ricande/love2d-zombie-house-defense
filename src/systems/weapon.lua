@@ -1,25 +1,7 @@
 local Weapon = {}
+local Settings = require("settings")
 
-Weapon.definitions = {
-    pistol = {
-        name = "Pistol",
-        fireCooldown = 0.28,
-        damage = 24,
-        bulletSpeed = 640,
-        pellets = 1,
-        spread = 0.02,
-        range = 1.2,
-    },
-    shotgun = {
-        name = "Shotgun",
-        fireCooldown = 0.9,
-        damage = 12,
-        bulletSpeed = 520,
-        pellets = 6,
-        spread = 0.32,
-        range = 1.0,
-    },
-}
+Weapon.definitions = Settings.weapons.definitions
 
 local function copyTable(source)
     local copy = {}
@@ -62,7 +44,7 @@ end
 
 function Weapon.getUpgradeCost(weapon, upgradeType)
     local level = weapon.upgradeLevels[upgradeType] or 0
-    return 3 + level * 2
+    return Settings.weapons.upgrades.baseCost + level * Settings.weapons.upgrades.costStep
 end
 
 function Weapon.tryUpgrade(loadout, resources, upgradeType)
@@ -72,7 +54,7 @@ function Weapon.tryUpgrade(loadout, resources, upgradeType)
     end
 
     local currentLevel = weapon.upgradeLevels[upgradeType]
-    local maxLevel = 5
+    local maxLevel = Settings.weapons.upgrades.maxLevel
     if currentLevel >= maxLevel then
         return false, "Upgrade maxed"
     end
@@ -84,13 +66,13 @@ function Weapon.tryUpgrade(loadout, resources, upgradeType)
 
     weapon.upgradeLevels[upgradeType] = currentLevel + 1
     if upgradeType == "fireRate" then
-        weapon.fireCooldown = weapon.fireCooldown * 0.9
+        weapon.fireCooldown = weapon.fireCooldown * Settings.weapons.upgrades.fireRateMultiplier
     elseif upgradeType == "damage" then
-        weapon.damage = weapon.damage * 1.18
+        weapon.damage = weapon.damage * Settings.weapons.upgrades.damageMultiplier
     elseif upgradeType == "range" then
-        weapon.range = weapon.range * 1.12
+        weapon.range = weapon.range * Settings.weapons.upgrades.rangeMultiplier
     elseif upgradeType == "pellets" then
-        weapon.pellets = weapon.pellets + 1
+        weapon.pellets = weapon.pellets + Settings.weapons.upgrades.pelletStep
     end
 
     weapon.level = weapon.level + 1

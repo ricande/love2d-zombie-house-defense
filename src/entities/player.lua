@@ -2,13 +2,156 @@ local Player = {}
 Player.__index = Player
 
 local Settings = require("settings")
-local AnimationController = require("src.systems.animation_controller")
-local AnimationProfile = require("src.systems.animation_profile")
 
 local TRANSIENT_PRIORITY = {
-    shoot = 1,
-    pickup = 2,
+    idle = 1,
+    walk = 2,
+    shoot = 3,
+    pickup = 4,
 }
+
+local playerSpriteRuntime = nil
+
+local function toDirectionName(dx, dy)
+    if math.abs(dx) < 0.001 and math.abs(dy) < 0.001 then
+        return nil
+    end
+
+    -- 8-way octant mapping, aligned to configured sheet row order.
+    local angle = math.atan(dy, dx)
+    local octant = math.floor((angle / (math.pi / 4)) + 0.5) % 8
+    local directionByOctant = {
+        "east",
+        "southeast",
+        "south",
+        "southwest",
+        "west",
+        "northwest",
+        "north",
+        "northeast",
+    }
+    return directionByOctant[octant + 1]
+end
+
+local function buildStateQuads(image, stateConfig, frameWidth, frameHeight, directionOrder)
+    local quads = {}
+    for directionIndex, directionName in ipairs(directionOrder) do
+        local directionQuads = {}
+        for frameIndex = 1, stateConfig.frameCount do
+            directionQuads[frameIndex] = love.graphics.newQuad(
+                (frameIndex - 1) * frameWidth,
+                (directionIndex - 1) * frameHeight,
+                frameWidth,
+                frameHeight,
+                image:getDimensions()
+            )
+        end
+        quads[directionName] = directionQuads
+    end
+    return quads
+end
+
+local function buildPlayerSpriteRuntime()
+    local animationConfig = Settings.animations.player
+    if not animationConfig then
+        return {
+            loaded = false,
+            states = {},
+            frameWidth = 1,
+            frameHeight = 1,
+        }
+    end
+
+    local runtime = {
+        loaded = true,
+        states = {},
+        frameWidth = animationConfig.frameWidth,
+        frameHeight = animationConfig.frameHeight,
+        defaultDirection = animationConfig.defaultDirection or "south",
+        defaultState = animationConfig.defaultState or "idle",
+        directionOrder = Settings.animations.directionOrder or {
+            "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest",
+        },
+    }
+
+    for stateName, stateConfig in pairs(animationConfig.states or {}) do
+        local ok, imageOrError = pcall(love.graphics.newImage, stateConfig.sheetPath)
+        if not ok then
+            runtime.loaded = false
+            runtime.states[stateName] = {
+                image = nil,
+                quadsByDirection = {},
+                frameCount = stateConfig.frameCount or 1,
+                fps = stateConfig.fps or 1,
+                scaleMultiplier = stateConfig.scaleMultiplier or 1,
+                oneShotDuration = stateConfig.oneShotDuration,
+            }
+        else
+            runtime.states[stateName] = {
+                image = imageOrError,
+                quadsByDirection = buildStateQuads(
+                    imageOrError,
+                    stateConfig,
+                    animationConfig.frameWidth,
+                    animationConfig.frameHeight,
+                    runtime.directionOrder
+                ),
+                frameCount = stateConfig.frameCount or 1,
+                fps = stateConfig.fps or 1,
+                scaleMultiplier = stateConfig.scaleMultiplier or 1,
+                oneShotDuration = stateConfig.oneShotDuration,
+            }
+        end
+    end
+
+    return runtime
+end
+
+local function ensurePlayerSpriteRuntime()
+    if playerSpriteRuntime == nil then
+        playerSpriteRuntime = buildPlayerSpriteRuntime()
+    end
+    return playerSpriteRuntime
+end
+
+local function updateAnimationFrame(self, dt)
+    local stateRuntime = self.spriteRuntime.states[self.animState]
+    if not stateRuntime then
+        return
+    end
+
+    local fps = math.max(0.001, stateRuntime.fps or 1)
+    local frameCount = math.max(1, stateRuntime.frameCount or 1)
+    local frameDuration = 1 / fps
+
+    self.animTimer = self.animTimer + dt
+    while self.animTimer >= frameDuration do
+        self.animTimer = self.animTimer - frameDuration
+        self.animFrame = self.animFrame + 1
+        if self.animFrame > frameCount then
+            self.animFrame = 1
+        end
+    end
+end
+
+local function setAnimState(self, stateName)
+    if self.animState == stateName then
+        return
+    end
+    self.animState = stateName
+    self.animFrame = 1
+    self.animTimer = 0
+end
+
+local function resolveAnimState(self, baseState)
+    if self.pickupTimer > 0 then
+        return "pickup"
+    end
+    if self.shootTimer > 0 then
+        return "shoot"
+    end
+    return baseState
+end
 
 function Player.new(x, y, loadout)
     local self = setmetatable({}, Player)
@@ -24,9 +167,13 @@ function Player.new(x, y, loadout)
     self.timeSinceShot = 0
     self.isDead = false
 
-    local profile = Settings.animations.player
-    local animationControllerConfig = AnimationProfile.toControllerConfig(profile, Settings.animations.directionOrder)
-    self.animation = AnimationController.new(animationControllerConfig)
+    self.spriteRuntime = ensurePlayerSpriteRuntime()
+    self.direction = self.spriteRuntime.defaultDirection or "south"
+    self.animState = self.spriteRuntime.defaultState or "idle"
+    self.animFrame = 1
+    self.animTimer = 0
+    self.shootTimer = 0
+    self.pickupTimer = 0
     return self
 end
 
@@ -42,32 +189,43 @@ function Player:update(dt, house, worldWidth, worldHeight)
     if love.keyboard.isDown("d") then moveX = moveX + 1 end
 
     local length = math.sqrt(moveX * moveX + moveY * moveY)
+    local previousX, previousY = self.x, self.y
+    local nextX, nextY = self.x, self.y
     if length > 0 then
         moveX = moveX / length
         moveY = moveY / length
-        self.x = self.x + moveX * self.speed * dt
-        self.y = self.y + moveY * self.speed * dt
+        nextX = self.x + moveX * self.speed * dt
+        nextY = self.y + moveY * self.speed * dt
     end
 
-    -- Keep the player inside the house interior for this prototype.
-    self.x = math.max(house.x + self.radius, math.min(house.x + house.width - self.radius, self.x))
-    self.y = math.max(house.y + self.radius, math.min(house.y + house.height - self.radius, self.y))
+    nextX, nextY = house:resolveWallCollision(
+        previousX,
+        previousY,
+        nextX,
+        nextY,
+        self.radius,
+        function(wall, alongAxisCoord, radius)
+            return house:isPlayerPassableAtWall(wall, alongAxisCoord, radius)
+        end
+    )
 
-    self.x = math.max(self.radius, math.min(worldWidth - self.radius, self.x))
-    self.y = math.max(self.radius, math.min(worldHeight - self.radius, self.y))
+    self.x = nextX
+    self.y = nextY
 
     self.timeSinceShot = self.timeSinceShot + dt
+    self.shootTimer = math.max(0, self.shootTimer - dt)
+    self.pickupTimer = math.max(0, self.pickupTimer - dt)
 
     if length > 0 then
-        self.animation:setDirectionFromVector(moveX, moveY)
+        self.direction = toDirectionName(moveX, moveY) or self.direction
     else
         local mx, my = love.mouse.getPosition()
-        self.animation:setDirectionFromVector(mx - self.x, my - self.y)
+        self.direction = toDirectionName(mx - self.x, my - self.y) or self.direction
     end
 
     local baseState = length > 0 and "walk" or "idle"
-    self.animation:setBaseState(baseState)
-    self.animation:update(dt)
+    setAnimState(self, resolveAnimState(self, baseState))
+    updateAnimationFrame(self, dt)
 end
 
 function Player:takeDamage(amount)
@@ -90,16 +248,30 @@ local function tryPlayTransient(self, stateName)
         return
     end
 
-    local currentTransient = self.animation:getTransientState()
-    if currentTransient then
-        local currentPriority = TRANSIENT_PRIORITY[currentTransient] or 0
-        local requestedPriority = TRANSIENT_PRIORITY[stateName] or 0
-        if requestedPriority < currentPriority then
-            return
-        end
+    local currentState = resolveAnimState(self, "idle")
+    local currentPriority = TRANSIENT_PRIORITY[currentState] or 0
+    local requestedPriority = TRANSIENT_PRIORITY[stateName] or 0
+    if requestedPriority < currentPriority then
+        return
     end
 
-    self.animation:playTransient(stateName)
+    local stateRuntime = self.spriteRuntime.states[stateName]
+    if not stateRuntime then
+        return
+    end
+
+    local duration = stateRuntime.oneShotDuration
+    if not duration or duration <= 0 then
+        duration = math.max(0.05, stateRuntime.frameCount / math.max(0.001, stateRuntime.fps))
+    end
+
+    if stateName == "shoot" then
+        self.shootTimer = duration
+    elseif stateName == "pickup" then
+        self.pickupTimer = duration
+    end
+
+    setAnimState(self, stateName)
 end
 
 function Player:triggerShootAnim()
@@ -116,23 +288,38 @@ function Player:draw()
         love.graphics.setColor(0.25, 0.25, 0.25)
         love.graphics.circle("fill", self.x, self.y, self.radius)
     else
-        drewSprite = self.animation:draw(self.x, self.y, self.radius, { 1, 1, 1, 1 })
+        local stateRuntime = self.spriteRuntime.states[self.animState]
+        if stateRuntime and stateRuntime.image then
+            local directionName = self.direction or self.spriteRuntime.defaultDirection or "south"
+            local directionQuads = stateRuntime.quadsByDirection[directionName]
+            local quad = directionQuads and directionQuads[self.animFrame]
+            if quad then
+                local frameWidth = self.spriteRuntime.frameWidth
+                local frameHeight = self.spriteRuntime.frameHeight
+                local targetSize = self.radius * (stateRuntime.scaleMultiplier or 2.5)
+                local scale = targetSize / math.max(1, frameWidth)
+                love.graphics.setColor(1, 1, 1, 1)
+                love.graphics.draw(
+                    stateRuntime.image,
+                    quad,
+                    self.x,
+                    self.y,
+                    0,
+                    scale,
+                    scale,
+                    frameWidth * 0.5,
+                    frameHeight * 0.5
+                )
+                drewSprite = true
+            end
+        end
+
         if not drewSprite then
             love.graphics.setColor(0.2, 0.82, 0.35)
             love.graphics.circle("fill", self.x, self.y, self.radius)
         end
     end
 
-    local mx, my = love.mouse.getPosition()
-    local dx, dy = mx - self.x, my - self.y
-    local len = math.sqrt(dx * dx + dy * dy)
-    if len > 0 then
-        dx = dx / len
-        dy = dy / len
-        love.graphics.setColor(0.92, 0.92, 0.95)
-        love.graphics.setLineWidth(3)
-        love.graphics.line(self.x, self.y, self.x + dx * 20, self.y + dy * 20)
-    end
 end
 
 return Player

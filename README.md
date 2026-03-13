@@ -30,7 +30,7 @@ _(Add a real screenshot later in `docs/`.)_
 ### Current Systems Implemented
 
 - Top-down house defense with breakable doors/windows and repair loop.
-- Shared animation controller for actors (player + zombies) with 8-direction sprite playback.
+- Player sprite runtime + zombie animation controller with 8-direction sprite playback.
 - Wave director with escalating composition and spawn pressure.
 - State machine flow: `start_menu -> combat -> prep -> store -> game_over`.
 - Between-wave store for healing, boards, and weapon stat upgrades.
@@ -43,6 +43,9 @@ _(Add a real screenshot later in `docs/`.)_
 - Doors and windows are breakable openings on house walls.
 - Each opening has durability and can be destroyed by zombies.
 - Once broken, zombies can enter and attack the player inside.
+- House walls are always solid for both player and zombies.
+- The player can cross the house boundary through openings regardless of opening durability.
+- Zombies can only cross openings with `durability <= 0` (open/broken); boarded/repaired openings block them.
 
 ### Zombies
 
@@ -93,10 +96,16 @@ _(Add a real screenshot later in `docs/`.)_
 
 ### Actor Animation Runtime
 
-- `AnimationController` drives sprite frame progression, direction mapping, and one-shot states.
-- `AnimationProfile` converts animation data from `settings.lua` into controller-ready configs.
-- Player uses `idle`, `walk`, `shoot`, and `pickup` sheets with transient priorities (`pickup > shoot`).
-- Zombies use the shared controller with their directional walk sheet and fallback circle rendering if assets are missing.
+- Player uses a sheet-based runtime in `player.lua` for `idle`, `walk`, `shoot`, and `pickup`, including direction mapping and transient priorities (`pickup > shoot > walk > idle`).
+- Zombies use `AnimationController` with directional walk sprites and fallback circle rendering if assets are missing.
+
+### Collision Runtime
+
+- Entity collision uses circle colliders for player and zombies.
+- House collision uses solid wall segments with explicit opening gaps.
+- Player and zombies are physically separated on overlap (mutual pushback).
+- There are no global world `x/y` clamp bounds on entity movement; movement is constrained by colliders.
+- Pickups still use radius-based collection overlap.
 
 ### Game States
 

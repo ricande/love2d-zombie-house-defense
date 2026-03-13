@@ -94,7 +94,7 @@ Settings.animations = {
 }
 
 Settings.player = {
-    radius = 13,
+    radius = 26,
     speed = 185,
     maxHealth = 100,
     repairRange = 70,
@@ -156,7 +156,7 @@ Settings.zombies = {
     types = {
         normal = {
             name = "Normal",
-            radius = 12,
+            radius = 24,
             speedMin = 58,
             speedMax = 76,
             health = 45, -- reduced by 10
@@ -166,7 +166,7 @@ Settings.zombies = {
         },
         fast = {
             name = "Fast",
-            radius = 10,
+            radius = 20,
             speedMin = 95,
             speedMax = 125,
             health = 38,
@@ -176,7 +176,7 @@ Settings.zombies = {
         },
         tank = {
             name = "Tank",
-            radius = 16,
+            radius = 32,
             speedMin = 38,
             speedMax = 50,
             health = 130,
